@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Block Blast</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #888;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        #score {
+            margin-bottom: 10px;
+        }
+
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(8, 40px);
+            grid-template-rows: repeat(8, 40px);
+            gap: 2px;
+            background: #999;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .cell {
+            width: 40px;
+            height: 40px;
+            background: #fff;
+            border-radius: 4px;
+        }
+
+        #pieces {
+            display: flex;
+            gap: 20px;
+        }
+
+        .block {
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            background: linear-gradient(to bottom right, rgba(255,255,255,0.6), rgba(0,0,0,0.2));
+            box-shadow: inset -2px -2px 5px rgba(255, 255, 255, 0.5), inset 2px 2px 5px rgba(0, 0, 0, 0.3), 2px 2px 6px rgba(0, 0, 0, 0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+            /* Добавим бликовую грань сверху слева */
+            .block::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: radial-gradient(circle at top left, rgba(255,255,255,0.4), transparent 60%);
+                pointer-events: none;
+            }
+
+
+
+        .piece {
+            display: grid;
+            grid-template-columns: repeat(4, 40px);
+            grid-template-rows: repeat(4, 40px);
+            gap: 2px;
+            cursor: grab;
+        }
+
+        .block {
+            width: 40px;
+            height: 40px;
+            border-radius: 4px;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.4);
+        }
+
+        .ghost {
+            position: absolute;
+            pointer-events: none;
+            opacity: 0.5;
+        }
+
+        #game-over {
+            display: none;
+            font-size: 24px;
+            color: white;
+            margin-top: 20px;
+        }
+
+        #restart-button {
+            display: none;
+            margin-top: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            background-color: #4caf50;
+            color: white;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Block Blast</h1>
+    <div id="score">Score: 0 | Best: 0</div>
+    <div id="grid"></div>
+    <div id="pieces"></div>
+    <div id="game-over">Игра Окончена!</div>
+    <button id="restart-button">Играть Снова!</button>
+
+    <script>
+        const gridSize = 8;
+        const grid = document.getElementById('grid');
+        const piecesContainer = document.getElementById('pieces');
+        const scoreDisplay = document.getElementById('score');
+        const gameOverDisplay = document.getElementById('game-over');
+        const restartButton = document.getElementById('restart-button');
+
+        let score, best, placedCount, board, ghostPiece;
+
+        function initializeGame() {
+            score = 0;
+            best = localStorage.getItem('blockBlastBest') || 0;
+            board = Array.from({ length: gridSize }, () => Array(gridSize).fill(null));
+            placedCount = 0;
+            createGrid();
+            generatePieces();
+            renderBoard();
+            updateScore(0);
+            gameOverDisplay.style.display = 'none';
+            restartButton.style.display = 'none';
+        }
+
+        function updateScore(points) {
+            score += points;
+            if (score > best) {
+                best = score;
+                localStorage.setItem('blockBlastBest', best);
+            }
+            scoreDisplay.textContent = `Score: ${score} | Best: ${best}`;
+        }
+
+        function createGrid() {
+            grid.innerHTML = '';
+            for (let y = 0; y < gridSize; y++) {
+                for (let x = 0; x < gridSize; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.x = x;
+                    cell.dataset.y = y;
+                    grid.appendChild(cell);
+                }
+            }
+        }
+
+        function renderBoard() {
+            [...grid.children].forEach(cell => {
+                const x = parseInt(cell.dataset.x);
+                const y = parseInt(cell.dataset.y);
+                cell.innerHTML = '';
+                if (board[y] && board[y][x]) {
+                    const blockDiv = document.createElement('div');
+                    blockDiv.className = 'block';
+                    blockDiv.style.backgroundColor = board[y][x];
+                    cell.appendChild(blockDiv);
+                }
+            });
+        }
+
+
+        const colors = ['#f44336', '#2196f3', '#ff9800', '#9c27b0', '#4caf50', '#3f51b5'];
+
+        const pieceShapes = [
+            [[1, 1], [1, 1]], // Квадрат
+            [[1], [1], [1]], // Вертикальная линия
+            [[1, 1, 1]], // Горизонтальная линия
+            [[1]], // Одиночный блок
+            [[1, 0], [1, 1]], // L-образная
+            [[0, 1], [1, 1]], // J-образная
+            [[1, 1], [1, 0]], // J-образная
+            [[1, 1], [0, 1]], // J-образная
+            [[1, 1, 0], [0, 1, 1]], // Z-образная
+            [[1, 1, 1], [0, 1, 0]], // T-образная
+            [[0, 1, 0], [1, 1, 1]], // T-образная
+            [[1], [1, 1], [1]],
+            [[0, 1], [1, 1], [0, 1]],
+            [[1, 1], [1, 1], [1, 1]],
+            [[1, 1, 1], [1, 1, 1]],
+            [[1, 1]],
+            [[1],[ 1]],// Простая 2x2
+            [[1, 0, 0], [1, 1, 1]], // Г-образная 
+            [[0, 0, 1], [1, 1, 1]], // Г-образная 
+            [[1, 1, 1], [0, 0, 1]], // Г-образная
+            [[1, 1, 1], [1, 0, 0]], // Г-образная 
+
+
+
+        ];
+
+
+        function generatePieces() {
+            piecesContainer.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                createPiece(i);
+            }
+        }
+
+        function createPiece(i) {
+            const piece = document.createElement('div');
+            piece.className = 'piece';
+
+            const shape = pieceShapes[Math.floor(Math.random() * pieceShapes.length)];
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            piece.dataset.shape = JSON.stringify(shape);
+            piece.dataset.color = color;
+
+            let offsetX = 0, offsetY = 0;
+
+            shape.forEach((row, y) => {
+                row.forEach((block, x) => {
+                    if (block) {
+                        const blockDiv = document.createElement('div');
+                        blockDiv.className = 'block';
+                        blockDiv.style.gridColumnStart = x + 1;
+                        blockDiv.style.gridRowStart = y + 1;
+                        blockDiv.style.background = color;
+                        piece.appendChild(blockDiv);
+                        if (offsetX === 0 && offsetY === 0) {
+                            offsetX = x;
+                            offsetY = y;
+                        }
+                    }
+                });
+            });
+
+            piece.draggable = true;
+            piece.addEventListener('dragstart', e => {
+                e.dataTransfer.setData('text/plain', piece.dataset.shape);
+                e.dataTransfer.setData('color', piece.dataset.color);
+                e.dataTransfer.setData('piece-id', i);
+                e.dataTransfer.setData('offsetX', offsetX);
+                e.dataTransfer.setData('offsetY', offsetY);
+                e.dataTransfer.setDragImage(piece, offsetX * 42, offsetY * 42);
+
+                if (ghostPiece) ghostPiece.remove();
+                ghostPiece = piece.cloneNode(true);
+                ghostPiece.classList.add('ghost');
+                grid.appendChild(ghostPiece);
+            });
+
+            piece.addEventListener('dragend', () => {
+                if (ghostPiece) ghostPiece.remove();
+            });
+
+            piecesContainer.appendChild(piece);
+        }
+
+        grid.addEventListener('dragover', e => {
+            e.preventDefault();
+
+            if (!ghostPiece) return;
+            const offsetX = parseInt(e.dataTransfer.getData('offsetX'));
+            const offsetY = parseInt(e.dataTransfer.getData('offsetY'));
+
+            const rect = grid.getBoundingClientRect();
+            const gridX = Math.floor((e.clientX - rect.left) / 42) - offsetX;
+            const gridY = Math.floor((e.clientY - rect.top) / 42) - offsetY;
+
+            ghostPiece.style.left = `${Math.max(0, Math.min(gridX, gridSize - 1)) * 42}px`;
+            ghostPiece.style.top = `${Math.max(0, Math.min(gridY, gridSize - 1)) * 42}px`;
+        });
+
+        grid.addEventListener('drop', e => {
+            const shape = JSON.parse(e.dataTransfer.getData('text/plain'));
+            const color = e.dataTransfer.getData('color');
+            const pieceId = e.dataTransfer.getData('piece-id');
+            const offsetX = parseInt(e.dataTransfer.getData('offsetX'));
+            const offsetY = parseInt(e.dataTransfer.getData('offsetY'));
+            const pieceEl = piecesContainer.children[pieceId];
+
+            if (!pieceEl || pieceEl.classList.contains('used')) return;
+
+            const rect = grid.getBoundingClientRect();
+            let x = Math.floor((e.clientX - rect.left) / 42) - offsetX;
+            let y = Math.floor((e.clientY - rect.top) / 42) - offsetY;
+
+            x = Math.max(0, Math.min(x, gridSize - 1));
+            y = Math.max(0, Math.min(y, gridSize - 1));
+
+            if (canPlacePiece(shape, x, y)) {
+                placePiece(shape, x, y, color);
+                pieceEl.classList.add('used');
+                pieceEl.style.visibility = 'visible';
+                pieceEl.draggable = false;
+
+                renderBoard();
+                checkLines();
+                const allUsed = [...piecesContainer.children].every(p => p.classList.contains('used'));
+
+                if (allUsed) {
+                    generatePieces();
+                }
+
+                checkIfStuck();
+            }
+        });
+
+        function canPlacePiece(shape, x, y) {
+            for (let i = 0; i < shape.length; i++) {
+                for (let j = 0; j < shape[i].length; j++) {
+                    if (shape[i][j]) {
+                        const posX = x + j;
+                        const posY = y + i;
+                        if (posX < 0 || posX >= gridSize || posY < 0 || posY >= gridSize || board[posY][posX]) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+
+        function placePiece(shape, x, y, color) {
+            for (let i = 0; i < shape.length; i++) {
+                for (let j = 0; j < shape[i].length; j++) {
+                    if (shape[i][j]) {
+                        const posX = x + j;
+                        const posY = y + i;
+                        board[posY][posX] = color;
+                    }
+                }
+            }
+        }
+
+        function checkLines() {
+            const linesToRemove = [];
+
+            // Проверка горизонтальных линий
+            for (let y = 0; y < gridSize; y++) {
+                if (board[y].every(cell => cell !== null)) {
+                    linesToRemove.push({ type: 'horizontal', index: y });
+                }
+            }
+
+            // Проверка вертикальных линий
+            for (let x = 0; x < gridSize; x++) {
+                const column = board.map(row => row[x]);
+                if (column.every(cell => cell !== null)) {
+                    linesToRemove.push({ type: 'vertical', index: x });
+                }
+            }
+
+            // Удаляем все найденные линии
+            linesToRemove.forEach(line => {
+                if (line.type === 'horizontal') {
+                    board[line.index] = Array(gridSize).fill(null);
+                } else if (line.type === 'vertical') {
+                    for (let y = 0; y < gridSize; y++) {
+                        board[y][line.index] = null;
+                    }
+                }
+            });
+
+            // Обновляем очки
+            const removedLinesCount = linesToRemove.length;
+            if (removedLinesCount > 0) {
+                updateScore(removedLinesCount * 100); // например, за каждую линию даем 100 очков
+            }
+
+            renderBoard();
+        }
+
+
+        function checkIfStuck() {
+            const pieces = [...piecesContainer.children].filter(p => !p.classList.contains('used'));
+            const availableShapes = pieces.map(p => ({
+                shape: JSON.parse(p.dataset.shape),
+                color: p.dataset.color
+            }));
+
+            let canPlaceAny = false;
+
+            for (const { shape } of availableShapes) {
+                for (let y = 0; y <= gridSize - shape.length; y++) {
+                    for (let x = 0; x <= gridSize - shape[0].length; x++) {
+                        if (canPlacePiece(shape, x, y)) {
+                            canPlaceAny = true;
+                            break;
+                        }
+                    }
+                    if (canPlaceAny) break;
+                }
+                if (canPlaceAny) break;
+            }
+
+            if (!canPlaceAny) {
+                gameOverDisplay.style.display = 'block';
+                restartButton.style.display = 'block';
+            }
+        }
+
+        restartButton.addEventListener('click', initializeGame);
+
+        initializeGame();
+    </script>
+</body>
+</html>
